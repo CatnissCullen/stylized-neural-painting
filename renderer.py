@@ -40,9 +40,9 @@ class Renderer():
             self.d_alpha = 1
         elif self.renderer in ['oilpaintbrush']:
             self.d = 12 # xc, yc, w, h, theta, R0, G0, B0, R2, G2, B2, A
-            self.d_shape = 5
-            self.d_color = 6
-            self.d_alpha = 1
+            self.d_shape = 5  # xc, yc, w, h, theta
+            self.d_color = 6  # R0, G0, B0, R2, G2, B2
+            self.d_alpha = 1  # A
             self.brush_small_vertical = cv2.imread(
                 r'./brushes/brush_fromweb2_small_vertical.png', cv2.IMREAD_GRAYSCALE)
             self.brush_small_horizontal = cv2.imread(
@@ -69,12 +69,15 @@ class Renderer():
             self.canvas = np.zeros(
                 [self.CANVAS_WIDTH, self.CANVAS_WIDTH, 3]).astype('float32')
 
-
+    """ used when training renderer """
     def random_stroke_params(self):
         self.stroke_params = np.array(_random_floats(0, 1, self.d), dtype=np.float32)
 
+    """ used when actually painting """
     def random_stroke_params_sampler(self, err_map, img):
-
+        """
+        sample the next stroke according to current err_map
+        """
         map_h, map_w, c = img.shape
 
         err_map = cv2.resize(err_map, (self.CANVAS_WIDTH, self.CANVAS_WIDTH))
@@ -83,6 +86,7 @@ class Renderer():
             err_map = np.ones_like(err_map)
         err_map = err_map / (np.sum(err_map) + 1e-99)
 
+        # sample a location (row, col) = (cy, cx) and normalized
         index = np.random.choice(range(err_map.size), size=1, p=err_map.ravel())[0]
 
         cy = (index // self.CANVAS_WIDTH) / self.CANVAS_WIDTH
@@ -107,12 +111,13 @@ class Renderer():
             self.stroke_params = np.array(x + r + color + alpha, dtype=np.float32)
         elif self.renderer in ['oilpaintbrush']:
             # xc, yc, w, h, theta, R0, G0, B0, R2, G2, B2, A
-            x = [cx, cy]
+            x = [cx, cy]  # [xc, yc]
             wh = _random_floats(0.1, 0.25, 2)
             theta = _random_floats(0, 1, 1)
-            color = img[int(cy*map_h), int(cx*map_w), :].tolist()
-            color = color + color
-            alpha = _random_floats(0.98, 1.0, 1)
+            color = img[int(cy*map_h), int(cx*map_w), :].tolist()  # [R0, G0, B0] at [xc, yc] on input photo
+            color = color + color  # [R0, G0, B0, R2, G2, B2] = [R0, G0, B0, R2, G2, B2]
+            alpha = _random_floats(0.98, 1.0, 1)  # [0.98, 1.0]
+            # combine all params to length-d array
             self.stroke_params = np.array(x + wh + theta + color + alpha, dtype=np.float32)
         elif self.renderer in ['rectangle']:
             # xc, yc, w, h, theta, R, G, B, A
@@ -260,7 +265,7 @@ class Renderer():
         self.stroke_alpha_map = np.zeros_like(
             self.canvas, dtype=np.uint8) # uint8 for antialiasing
 
-        if abs(x0-x2) + abs(y0-y2) < 4: # too small, dont draw
+        if abs(x0-x2) + abs(y0-y2) < 4: # too small, don't draw
             self.foreground = np.array(self.foreground, dtype=np.float32) / 255.
             self.stroke_alpha_map = np.array(self.stroke_alpha_map, dtype=np.float32) / 255.
             self.canvas = self._update_canvas()
@@ -301,8 +306,12 @@ class Renderer():
 
 
     def _draw_oilpaintbrush(self):
-
+        """
+        normalize params to actual range then form params to stroke-image on canvas
+        :return: None (straightly update the self.foreground, self.stroke_alpha_map, self.canvas)
+        """
         # xc, yc, w, h, theta, R0, G0, B0, R2, G2, B2, A
+        """ normalize shape params to actual range (RGB is still [0, 1]) """
         x0, y0, w, h, theta = self.stroke_params[0:5]
         R0, G0, B0, R2, G2, B2, ALPHA = self.stroke_params[5:]
         x0 = _normalize(x0, self.CANVAS_WIDTH)
@@ -311,6 +320,8 @@ class Renderer():
         h = (int)(1 + h * self.CANVAS_WIDTH)
         theta = np.pi*theta
 
+        """ choose & read the brush pic. example as GREYSCALE according to size as (w, h) """
+        """ read to => (h, w) ndarray """
         if w * h / (self.CANVAS_WIDTH**2) > 0.1:
             if h > w:
                 brush = self.brush_large_vertical
@@ -321,17 +332,20 @@ class Renderer():
                 brush = self.brush_small_vertical
             else:
                 brush = self.brush_small_horizontal
+        """ transform the example pic. into foreground & alpha-map according to params """
         self.foreground, self.stroke_alpha_map = utils.create_transformed_brush(
             brush, self.CANVAS_WIDTH, self.CANVAS_WIDTH,
-            x0, y0, w, h, theta, R0, G0, B0, R2, G2, B2)
+            x0, y0, w, h, theta, R0, G0, B0, R2, G2, B2)  # uint8 (h, w, 3) [0, 255]
 
+        """ morphology using cv2 """
         if not self.train:
             self.foreground = cv2.dilate(self.foreground, np.ones([2, 2]))
             self.stroke_alpha_map = cv2.erode(self.stroke_alpha_map, np.ones([2, 2]))
 
-        self.foreground = np.array(self.foreground, dtype=np.float32)/255.
-        self.stroke_alpha_map = np.array(self.stroke_alpha_map, dtype=np.float32)/255.
-        self.canvas = self._update_canvas()
+        """  """
+        self.foreground = np.array(self.foreground, dtype=np.float32)/255.  # float32 (h, w, 3) [0, 1]
+        self.stroke_alpha_map = np.array(self.stroke_alpha_map, dtype=np.float32)/255.  # float32 (h, w, 3) [0, 1]
+        self.canvas = self._update_canvas()  # float32 (h, w, 3) [0, 1]
 
 
     def _update_canvas(self):

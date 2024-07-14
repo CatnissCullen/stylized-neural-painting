@@ -19,10 +19,11 @@ class PainterBase():
     def __init__(self, args):
         self.args = args
 
+        # the Renderer
         self.rderr = renderer.Renderer(renderer=args.renderer,
                                        CANVAS_WIDTH=args.canvas_size, canvas_color=args.canvas_color)
 
-        # define G
+        # the Generator with the Renderer
         self.net_G = define_G(rdrr=self.rderr, netG=args.net_G).to(device)
 
         # define some other vars to record the training states
@@ -46,7 +47,7 @@ class PainterBase():
         self._pxl_loss = loss.PixelLoss(p=1)
         self._sinkhorn_loss = loss.SinkhornLoss(epsilon=0.01, niter=5, normalize=False)
 
-        # some other vars to be initialized in child classes
+        # some other vars to be initialized in child classes (Painter, ProgressivePainter)
         self.input_aspect_ratio = None
         self.img_path = None
         self.img_batch = None
@@ -59,7 +60,7 @@ class PainterBase():
             os.mkdir(self.output_dir)
 
     def _load_checkpoint(self):
-
+        """ Renderer is pretrained, can be used immediately without further training """
         # load renderer G
         if os.path.exists((os.path.join(
                 self.renderer_checkpoint_dir, 'last_ckpt.pt'))):
@@ -70,7 +71,7 @@ class PainterBase():
             # update net_G states
             self.net_G.load_state_dict(checkpoint['model_G_state_dict'])
             self.net_G.to(device)
-            self.net_G.eval()
+            self.net_G.eval()  # freeze the Renderer
         else:
             print('pre-trained renderer does not exist...')
             exit()
@@ -103,13 +104,14 @@ class PainterBase():
 
         grid_idx = list(range(self.m_grid ** 2))
         random.shuffle(grid_idx)
+        print("strokes shuffled")
         v = v[grid_idx, :, :]
         v = np.reshape(np.transpose(v, [1,0,2]), [-1, self.rderr.d])
         v = np.expand_dims(v, axis=0)
 
         return v
 
-    def _render(self, v, save_jpgs=True, save_video=True):
+    def _render(self, v, save_jpgs=False, save_video=False):
 
         v = v[0,:,:]
         if self.args.keep_aspect_ratio:
@@ -145,15 +147,13 @@ class PainterBase():
             if save_video:
                 video_writer.write((this_frame[:,:,::-1] * 255.).astype(np.uint8))
 
-        if save_jpgs:
-            print('saving input photo...')
-            out_img = cv2.resize(self.img_, (out_w, out_h), cv2.INTER_AREA)
-            plt.imsave(file_name + '_input.png', out_img)
+        print('saving input photo...')
+        out_img = cv2.resize(self.img_, (out_w, out_h), cv2.INTER_AREA)
+        plt.imsave(file_name + '_input.png', out_img)
 
         final_rendered_image = np.copy(this_frame)
-        if save_jpgs:
-            print('saving final rendered result...')
-            plt.imsave(file_name + '_final.png', final_rendered_image)
+        print('saving final rendered result...')
+        plt.imsave(file_name + '_final.png', final_rendered_image)
 
         return final_rendered_image
 
@@ -224,8 +224,9 @@ class PainterBase():
             this_err_map = this_err_map ** 4
             this_img = self.img_batch[i, :, :, :].detach().permute([1, 2, 0]).cpu().numpy()
 
+            """ Sample stroke params according to current error-map """
             self.rderr.random_stroke_params_sampler(
-                err_map=this_err_map, img=this_img)
+                err_map=this_err_map, img=this_img)  # normalize RGB and other params to [0, 1]
 
             self.x_ctt.data[i, anchor_id, :] = torch.tensor(
                 self.rderr.stroke_params[0:self.rderr.d_shape])
@@ -235,8 +236,9 @@ class PainterBase():
 
 
     def _backward_x(self):
-
+        """ Stroke Painting Loss = Pixel-wise Loss + Optimal Transportation Loss """
         self.G_loss = 0
+        # TODO: img_batch => img_batch's pred_XO_t, t accords to m_grid
         self.G_loss += self.args.beta_L1 * self._pxl_loss(
             canvas=self.G_final_pred_canvas, gt=self.img_batch)
         if self.args.with_ot_loss:
@@ -263,9 +265,11 @@ class PainterBase():
             self.G_pred_alphas, [self.m_grid*self.m_grid, self.anchor_id+1, 3,
                                  self.net_G.out_size, self.net_G.out_size])
 
+        """ Blend all strokes one after another on the empty canvas """
         for i in range(self.anchor_id+1):
             G_pred_foreground = self.G_pred_foregrounds[:, i]
             G_pred_alpha = self.G_pred_alphas[:, i]
+            """ Blend foreground to current canvas according to alpha """
             self.G_pred_canvas = G_pred_foreground * G_pred_alpha \
                                  + self.G_pred_canvas * (1 - G_pred_alpha)
 
@@ -285,7 +289,7 @@ class Painter(PainterBase):
 
         self.img_path = args.img_path
         self.img_ = cv2.imread(args.img_path, cv2.IMREAD_COLOR)
-        self.img_ = cv2.cvtColor(self.img_, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.
+        self.img_ = cv2.cvtColor(self.img_, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.  # normalize RGB to [0, 1]
         self.input_aspect_ratio = self.img_.shape[0] / self.img_.shape[1]
         self.img_ = cv2.resize(self.img_, (self.net_G.out_size * args.m_grid,
                                            self.net_G.out_size * args.m_grid), cv2.INTER_AREA)

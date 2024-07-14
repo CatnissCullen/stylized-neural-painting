@@ -115,6 +115,7 @@ def define_G(rdrr, netG, init_type='normal', init_gain=0.02, gpu_ids=[]):
 class DCGAN(nn.Module):
     def __init__(self, rdrr, ngf=64):
         super(DCGAN, self).__init__()
+        # stroke type (rdrr) decides the input channels' dim.
         input_nc = rdrr.d
         self.out_size = 128
         self.main = nn.Sequential(
@@ -292,9 +293,9 @@ class ZouFCNFusion(nn.Module):
         x_alpha = x[:, [-1], :, :]
         if self.rdrr.renderer in ['oilpaintbrush', 'airbrush']:
             x_alpha = torch.tensor(1.0).to(device)
-
-        mask = self.huangnet(x_shape)
-        color, _ = self.dcgan(x)
+        # TODO: what about other renderer's alpha map?
+        mask = self.huangnet(x_shape)  # Rasterization Network
+        color, _ = self.dcgan(x)  # Shading Network
 
         return color * mask, x_alpha * mask
 

@@ -19,12 +19,13 @@ import renderer
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class Imitator():
-
+class Imitator:
+    """ To render a correct stroke given a random params vector """
     def __init__(self, args, dataloaders):
 
         self.dataloaders = dataloaders
 
+        # args.renderer -- stroke type; self.rderr -- only to send stroke type's params dim. to net_G
         self.rderr = renderer.Renderer(renderer=args.renderer)
 
         # define G
@@ -216,6 +217,7 @@ class Imitator():
         self.gt_foreground = torch.nn.functional.interpolate(self.gt_foreground, (h, w), mode='area')
         self.gt_alpha = torch.nn.functional.interpolate(self.gt_alpha, (h, w), mode='area')
 
+        """ NO NEED TO RENDER TO COMPUTE LOSS!!! (just compute with the image tensor) """
         pixel_loss1 = self._pxl_loss(self.G_pred_foreground, self.gt_foreground)
         pixel_loss2 = self._pxl_loss(self.G_pred_alpha, self.gt_alpha)
         self.G_loss = 100 * (pixel_loss1 + pixel_loss2) / 2.0

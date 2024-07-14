@@ -124,7 +124,9 @@ class VGGStyleLoss(torch.nn.Module):
         return loss
 
 
-
+""" Optimal Transport distance with entropy regularization """
+""" (By randomly selecting a color channel, the computational 
+cost is reduced without significantly affecting the loss computation) """
 class SinkhornLoss(nn.Module):
 
     def __init__(self, epsilon=0.01, niter=5, normalize=False):

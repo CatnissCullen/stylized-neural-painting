@@ -118,4 +118,4 @@ def render_one(img_path):
     plt.imshow(final_rendered_image), plt.title('generated')
     plt.show()
 
-# render_one('./test_images/iceland.jpg')
+render_one('./test_images/iceland.jpg')

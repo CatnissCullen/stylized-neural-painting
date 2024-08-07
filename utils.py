@@ -164,16 +164,22 @@ class StrokeTransDataset(Dataset):
         self.rderr.draw_stroke()
 
         params = np.array(self.rderr.stroke_params, dtype=np.float32)
-        params = torch.tensor(params)
+        x0, y0, w, h, theta = params[0:5]
+        R0, G0, B0, R2, G2, B2, ALPHA = params[5:]
+        raster_params = np.array([x0, y0, w, h, theta], dtype=np.float32)
+        shade_params = np.array([R0, G0, B0, R2, G2, B2, ALPHA], dtype=np.float32)
+        raster_params, shade_params = torch.tensor(raster_params), torch.tensor(shade_params)
         # params = torch.tensor(self.params_normalization(params))
         # params = torch.reshape(params, [-1, 1, 1])
         foreground, stroke_alpha_map = \
             (np.array(self.rderr.foreground, dtype=np.float32) * 255).astype(np.uint8), \
             (np.array(self.rderr.stroke_alpha_map, dtype=np.float32) * 255).astype(np.uint8)
+        # TODO: extract skeleton
+        # foreground = Image.fromarray(foreground)
         foreground, stroke_alpha_map = Image.fromarray(foreground), Image.fromarray(stroke_alpha_map)
 
         foreground, stroke_alpha_map = self.preproc(foreground), self.preproc(stroke_alpha_map)  # (b, c, h, w) [0, 1] Tensors
-        data = {'A': params, 'B': foreground, 'ALPHA': stroke_alpha_map}
+        data = {'A1': raster_params, 'A2': shade_params, 'B': foreground, 'ALPHA': stroke_alpha_map}
 
         return data
 
@@ -445,6 +451,13 @@ def build_transformation_matrix(transform):
     transform_matrix[1, 2] = transform[1]
 
     return transform_matrix
+
+
+def extract_skeleton(image: np.ndarray):
+    skeleton = None
+    # TODO: How to generate raster skeleton?? Read LIVE!!
+    return skeleton
+
 
 
 

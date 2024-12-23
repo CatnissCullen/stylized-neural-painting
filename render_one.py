@@ -32,25 +32,25 @@ def optimize_painting(pt:ProgressivePainter):
         # start from the rendered canvas of previous (m_grid * m_grid)
         pt.G_final_pred_canvas = CANVAS_tmp
 
-        pt.initialize_params()
-        pt.x_ctt.requires_grad = True
+        pt.initialize_params()  # RANDOMLY INITIALIZE STROKE PARAMS
+        pt.x_ctt.requires_grad = True  # ENABLE STROKE PARAMS GRAD
         pt.x_color.requires_grad = True
         pt.x_alpha.requires_grad = True
-        utils.set_requires_grad(pt.net_G, False)
+        utils.set_requires_grad(pt.net_G, False)  # DISABLE RENDERER GRAD
 
         pt.optimizer_x = optim.RMSprop([pt.x_ctt, pt.x_color, pt.x_alpha], lr=pt.lr, centered=True)
 
         pt.step_id = 0
         """ Iter. anchor_id over m_strokes_per_block """
         for pt.anchor_id in range(0, pt.m_strokes_per_block):
-            """ finish adding all the anchor_id-th strokes to the blocks-batch """
+            # for each anchor (stroke no.):
             # sample stroke params in the distribution of error map
             pt.stroke_sampler(pt.anchor_id)
             iters_per_stroke = int(500 / pt.m_strokes_per_block)
             """ Iter. i over iters_per_stroke to optimize all the anchor_id-th strokes """
             # TODO: iters may need less?
             for i in range(iters_per_stroke):
-                # start from the rendered canvas of previous (m_grid * m_grid)
+                # for each step:
                 pt.G_pred_canvas = CANVAS_tmp
 
                 # update x
